@@ -72,8 +72,23 @@ jobs:
         if: runner.os == 'Windows' || !inputs.reuse_mac_run
       - run: npx playwright install --only-shell chromium
         if: runner.os == 'Windows' || !inputs.reuse_mac_run
+      - name: Verify prior Windows unit results against identical sources and tests
+        id: previous_windows_units
+        if: runner.os == 'Windows' && inputs.reuse_mac_run
+        shell: bash
+        env:
+          GH_TOKEN: '${{ github.token }}'
+          REUSE_MAC_RUN: '${{ inputs.reuse_mac_run }}'
+        run: |
+          [[ "$REUSE_MAC_RUN" =~ ^[0-9]+$ ]]
+          old=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$REUSE_MAC_RUN" --jq .head_sha)
+          result=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$REUSE_MAC_RUN/jobs" --jq '.jobs[] | select(.name == "Build windows-x64") | .steps[] | select(.name == "Windows unit checks in five shuffled runs") | .conclusion')
+          if [[ "$result" == success ]] && git diff --quiet "$old" "$GITHUB_SHA" -- . ':(exclude).github/workflows/release.yml'; then
+            echo 'verified=true' >> "$GITHUB_OUTPUT"
+            echo "Reusing five successful shuffled unit runs from $REUSE_MAC_RUN; all application sources and tests are byte-identical."
+          fi
       - name: Windows unit checks in five shuffled runs
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && steps.previous_windows_units.outputs.verified != 'true'
         shell: pwsh
         run: |
           foreach ($seed in @(8641,8642,8643,8644,8645)) {
@@ -131,6 +146,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - run: npm run release:prepare
         if: runner.os == 'Windows' || !inputs.reuse_mac_run
+      - name: Use fast lossless Windows installer compression
+        if: runner.os == 'Windows'
+        run: node -e "const fs=require('fs'),p='.release/tauri.release.json',c=JSON.parse(fs.readFileSync(p));c.bundle.windows.nsis.compression='zlib';fs.writeFileSync(p,JSON.stringify(c,null,2))"
       - name: Rust platform contracts
         if: runner.os == 'Windows' || !inputs.reuse_mac_run
         working-directory: src-tauri
