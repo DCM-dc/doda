@@ -146,9 +146,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - run: npm run release:prepare
         if: runner.os == 'Windows' || !inputs.reuse_mac_run
-      - name: Use fast lossless Windows installer compression
+      - name: Use fast Windows installer compression without quadratic file deduplication
         if: runner.os == 'Windows'
-        run: node -e "const fs=require('fs'),p='.release/tauri.release.json',c=JSON.parse(fs.readFileSync(p));c.bundle.windows.nsis.compression='zlib';fs.writeFileSync(p,JSON.stringify(c,null,2))"
+        run: node -e "const fs=require('fs'),p='.release/tauri.release.json',c=JSON.parse(fs.readFileSync(p));c.bundle.windows.nsis.compression='zlib';c.bundle.windows.nsis.installerHooks='../.release/windows-compiler.nsh';fs.writeFileSync('.release/windows-compiler.nsh','SetDatablockOptimize off'+String.fromCharCode(10));fs.writeFileSync(p,JSON.stringify(c,null,2))"
       - name: Rust platform contracts
         if: runner.os == 'Windows' || !inputs.reuse_mac_run
         working-directory: src-tauri
