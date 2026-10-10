@@ -1,10 +1,16 @@
 name: Desktop release
 on:
   workflow_dispatch:
+    inputs:
+      reuse_mac_run:
+        description: 'Optional prior run containing verified Mac archives with identical application sources'
+        required: false
+        type: string
   push:
     tags: ['v*']
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: desktop-release-${{ github.ref }}
   cancel-in-progress: false
@@ -22,17 +28,50 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Verify the reused Mac application source is identical
+        if: runner.os == 'macOS' && inputs.reuse_mac_run
+        env:
+          GH_TOKEN: '${{ github.token }}'
+          REUSE_MAC_RUN: '${{ inputs.reuse_mac_run }}'
+        run: |
+          [[ "$REUSE_MAC_RUN" =~ ^[0-9]+$ ]]
+          old=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$REUSE_MAC_RUN" --jq .head_sha)
+          result=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$REUSE_MAC_RUN/jobs" --jq '.jobs[] | select(.name == "Build ${{ matrix.name }}") | .conclusion')
+          [[ "$result" == success ]]
+          git diff --exit-code "$old" "$GITHUB_SHA" -- server src scripts src-tauri package.json package-lock.json LICENSE LICENSE.details THIRD_PARTY_NOTICES.md THIRD-PARTY-NOTICES.md licenses index.html vite.config.ts
+      - uses: actions/download-artifact@v4
+        if: runner.os == 'macOS' && inputs.reuse_mac_run
+        with:
+          name: ${{ matrix.name }}
+          path: reuse
+          run-id: ${{ inputs.reuse_mac_run }}
+          github-token: ${{ github.token }}
+      - name: Recheck the verified Mac archive on its native architecture
+        if: runner.os == 'macOS' && inputs.reuse_mac_run
+        run: |
+          mkdir -p release .release/reused
+          tar -xzf 'reuse/release/doda-${{ matrix.name }}.tar.gz' -C .release/reused
+          arch=$(uname -m)
+          if [[ "$arch" == x86_64 ]]; then arch=x64; fi
+          .release/reused/doda.app/Contents/Resources/runtime/darwin-$arch/bin/node scripts/verify-desktop.mjs .release/reused/doda.app '${{ matrix.name }}-smoke.json'
+          mv 'reuse/release/doda-${{ matrix.name }}.tar.gz' release/
       - uses: actions/setup-node@v4
+        if: runner.os == 'Windows' || !inputs.reuse_mac_run
         with:
           node-version: '24.16.0'
           cache: npm
       - uses: Swatinem/rust-cache@v2
+        if: runner.os == 'Windows' || !inputs.reuse_mac_run
         with:
           workspaces: src-tauri
           cache-on-failure: true
       - run: npm ci --no-audit --no-fund
+        if: runner.os == 'Windows' || !inputs.reuse_mac_run
       - run: npm run build
+        if: runner.os == 'Windows' || !inputs.reuse_mac_run
       - run: npx playwright install --only-shell chromium
+        if: runner.os == 'Windows' || !inputs.reuse_mac_run
       - name: Windows unit checks in five shuffled runs
         if: runner.os == 'Windows'
         shell: pwsh
@@ -42,12 +81,16 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
       - name: Native DSH protocol integration
+        if: runner.os == 'Windows' || !inputs.reuse_mac_run
         run: npm run test:runtime
       - run: npm run release:prepare
+        if: runner.os == 'Windows' || !inputs.reuse_mac_run
       - name: Rust platform contracts
+        if: runner.os == 'Windows' || !inputs.reuse_mac_run
         working-directory: src-tauri
         run: cargo test --locked
       - run: npm run release:build
+        if: runner.os == 'Windows' || !inputs.reuse_mac_run
       - name: Install and verify Windows package
         if: runner.os == 'Windows'
         shell: pwsh
@@ -62,7 +105,7 @@ jobs:
           New-Item -ItemType Directory -Path release -Force | Out-Null
           Copy-Item -LiteralPath $package.FullName -Destination 'release/doda-0.1.0-windows-x64-setup.exe'
       - name: Verify and archive Mac application
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && !inputs.reuse_mac_run
         run: |
           app='src-tauri/target/release/bundle/macos/doda.app'
           arch=$(node -p process.arch)
