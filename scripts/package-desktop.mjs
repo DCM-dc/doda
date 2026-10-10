@@ -40,7 +40,8 @@ if (process.argv[2] === 'prepare') {
   await mkdir(join(runtime, 'bin'), { recursive: true })
   const downloads = join(stage, 'downloads'); await mkdir(downloads, { recursive: true })
   const extension = platform === 'win32' ? 'zip' : 'tar.gz'
-  const filename = `node-v${nodeVersion}-${platform}-${arch}.${extension}`
+  const nodePlatform = platform === 'win32' ? 'win' : platform
+  const filename = `node-v${nodeVersion}-${nodePlatform}-${arch}.${extension}`
   const base = `https://nodejs.org/dist/v${nodeVersion}/`
   const sums = await (await fetch(base + 'SHASUMS256.txt', { signal: AbortSignal.timeout(60000) })).text()
   const hash = sums.split(/\r?\n/).map(line => line.trim().split(/\s+/)).find(parts => parts[1] === filename)?.[0]
@@ -48,7 +49,7 @@ if (process.argv[2] === 'prepare') {
   const archive = join(downloads, filename)
   await download(base + filename, archive, hash)
   await run('tar', ['-xf', archive, '-C', downloads])
-  const extracted = join(downloads, `node-v${nodeVersion}-${platform}-${arch}`)
+  const extracted = join(downloads, `node-v${nodeVersion}-${nodePlatform}-${arch}`)
   await cp(join(extracted, platform === 'win32' ? 'node.exe' : 'bin/node'), join(runtime, 'bin', platform === 'win32' ? 'node.exe' : 'node'))
   await cp(join(extracted, 'LICENSE'), join(runtime, 'bin/LICENSE'))
   await run(process.execPath, [join(backend, 'node_modules/playwright/cli.js'), 'install', '--only-shell', 'chromium'], { env: { ...process.env, PLAYWRIGHT_BROWSERS_PATH: join(runtime, 'browsers') } })
