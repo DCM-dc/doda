@@ -64,7 +64,7 @@ try {
   assert.equal(preview.status, 200, await preview.clone().text())
   const required = createRequire(join(backend, 'package.json'))
   process.env.PLAYWRIGHT_BROWSERS_PATH = join(runtime, 'browsers')
-  const { chromium } = await import(pathToFileURL(required.resolve('playwright')).href)
+  const { chromium } = required('playwright')
   const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] })
   try {
     const tab = await browser.newPage({ viewport: { width: 393, height: 852 } })
