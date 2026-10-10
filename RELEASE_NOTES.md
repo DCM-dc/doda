@@ -1,7 +1,7 @@
 doda 0.1.0：持续聊天，聊清功能和视觉感觉，确认后生成微信原生小程序。
 
-- Windows：下载 `doda-0.1.0-windows-x64-setup.exe`，运行安装程序，再从开始菜单打开 doda。支持 Windows 10/11 x64，安装程序会在缺少 WebView2 时准备运行环境。
-- Mac：下载 `doda-0.1.0-macos-universal.dmg`，将 doda 拖入 Applications。支持 macOS 11 及以上的 M 系列和 Intel Mac。应用使用本地签名，尚未获得 Apple 公证；系统首次打开时可能要求在“系统设置 → 隐私与安全性”允许打开。
+- Windows：下载 `doda-0.1.0-windows-x64-setup.exe`，运行安装程序，再从开始菜单打开 doda。支持 Windows 11 x64，安装程序会在缺少 WebView2 时准备运行环境。
+- Mac：下载 `doda-0.1.0-macos-universal.dmg`，将 doda 拖入 Applications。支持 macOS 14 及以上的 M 系列和 Intel Mac。应用使用本地签名，尚未获得 Apple 公证；系统首次打开时可能要求在“系统设置 → 隐私与安全性”允许打开。
 
 两个包均内置 Node、原生预览引擎、Chromium 截图引擎与 SenseVoice 语音识别模型。首次使用请在设置中填写自己的 DeepSeek 和 MiMo key，按需允许麦克风。发布包不包含开发者的 API key、聊天记录或本机作品。
 

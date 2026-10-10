@@ -57,11 +57,11 @@ if (process.argv[2] === 'prepare') {
   if (platform === 'darwin') {
     await chmod(join(runtime, 'bin/node'), 0o755)
     await mkdir(join(resources, 'helpers'), { recursive: true })
-    await run('clang', ['-arch', arch === 'arm64' ? 'arm64' : 'x86_64', '-mmacosx-version-min=11.0', 'src-tauri/keychain.c', '-framework', 'Security', '-framework', 'CoreFoundation', '-o', join(resources, 'helpers/doda-keychain')])
+    await run('clang', ['-arch', arch === 'arm64' ? 'arm64' : 'x86_64', '-mmacosx-version-min=14.0', 'src-tauri/keychain.c', '-framework', 'Security', '-framework', 'CoreFoundation', '-o', join(resources, 'helpers/doda-keychain')])
   }
   const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
   await writeFile(join(resources, 'release.json'), JSON.stringify({ version: pkg.version, platform, arch, nodeVersion, nodeSHA256: hash, privateDataIncluded: false }, null, 2))
-  const config = { bundle: { active: true, targets: [platform === 'win32' ? 'nsis' : 'app'], resources: { '../.release/resources/': '' }, ...(platform === 'win32' ? { windows: { nsis: { installMode: 'currentUser', displayLanguageSelector: false, languages: ['SimpChinese', 'English'], compression: 'lzma' } } } : { macOS: { minimumSystemVersion: '11.0', infoPlist: 'Info.plist' } }) } }
+  const config = { bundle: { active: true, targets: [platform === 'win32' ? 'nsis' : 'app'], resources: { '../.release/resources/': '' }, ...(platform === 'win32' ? { windows: { nsis: { installMode: 'currentUser', displayLanguageSelector: false, languages: ['SimpChinese', 'English'], compression: 'lzma' } } } : { macOS: { minimumSystemVersion: '14.0', infoPlist: 'Info.plist' } }) } }
   await writeFile(join(stage, 'tauri.release.json'), JSON.stringify(config, null, 2))
   console.log(`Prepared ${platform}-${arch} runtime.`)
 } else if (process.argv[2] === 'build') {
