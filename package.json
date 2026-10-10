@@ -1,0 +1,68 @@
+{
+  "name": "doda",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx --no-cache server/index.ts",
+    "build": "tsc --noEmit && vite build",
+    "start": "tsx --no-cache server/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --project unit",
+    "test:runtime": "tsx --no-cache test/runtime-integration.ts",
+    "desktop": "tauri dev",
+    "desktop:build": "tauri build --no-bundle",
+    "release:prepare": "node scripts/package-desktop.mjs prepare",
+    "release:build": "node scripts/package-desktop.mjs build",
+    "asr:setup": "node scripts/setup-asr.mjs"
+  },
+  "overrides": {
+    "react-if-lite": {
+      "react": "$react"
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-llm-deepseek": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-sdk-client": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-sdk-protocol": "0.2.0-rc.2",
+    "@reause/core": "0.1.8",
+    "@tanstack/react-query": "5.90.20",
+    "@tauri-apps/api": "^2.8.0",
+    "archiver": "^7.0.1",
+    "esbuild": "0.28.2",
+    "express": "^5.1.0",
+    "glass-easel": "1.2.1",
+    "glass-easel-miniprogram-adapter": "1.2.1",
+    "glass-easel-stylesheet-compiler": "1.2.1",
+    "glass-easel-template-compiler": "1.2.1",
+    "html-to-image": "1.11.13",
+    "i18next": "^25.5.0",
+    "mdast-util-from-markdown": "2.1.0",
+    "miniprogram-ci": "2.1.31",
+    "playwright": "1.63.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-i18next": "^15.7.0",
+    "react-if-lite": "0.1.0",
+    "react-markdown": "10.1.0",
+    "sherpa-onnx-node": "1.13.8",
+    "tsx": "^4.20.0",
+    "vite": "^6.3.0",
+    "zod": "3.25.75"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.8.0",
+    "@types/archiver": "^6.0.3",
+    "@types/express": "^5.0.0",
+    "@types/jsdom": "30.0.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.4.0",
+    "ajv": "8.20.0",
+    "jsdom": "30.1.2",
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.0"
+  }
+}

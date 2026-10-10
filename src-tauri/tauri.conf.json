@@ -1,0 +1,9 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "doda",
+  "version": "0.1.0",
+  "identifier": "local.doda.desktop",
+  "build": { "frontendDist": "../dist", "devUrl": "http://127.0.0.1:4318" },
+  "app": { "windows": [], "security": { "csp": null } },
+  "bundle": { "active": false, "icon": ["icons/icon.ico", "icons/icon.png"] }
+}

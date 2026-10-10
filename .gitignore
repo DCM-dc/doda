@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.data/
+src-tauri/target/
+*.log
+.release/
+release/
+doda-desktop.exe
+src-tauri/gen/

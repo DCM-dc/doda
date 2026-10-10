@@ -1,0 +1,149 @@
+name: Desktop release
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: windows-x64, os: windows-2022 }
+          - { name: macos-arm64, os: macos-15 }
+          - { name: macos-x64, os: macos-15-intel }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.16.0'
+          cache: npm
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+      - run: npx playwright install --only-shell chromium
+      - name: Windows unit checks in five shuffled runs
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          foreach ($seed in @(8641,8642,8643,8644,8645)) {
+            node node_modules/vitest/vitest.mjs run --project unit --maxWorkers=3 --sequence.shuffle --sequence.seed=$seed
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+      - name: Native DSH protocol integration
+        run: npm run test:runtime
+      - run: npm run release:prepare
+      - name: Rust platform contracts
+        working-directory: src-tauri
+        run: cargo test --locked
+      - run: npm run release:build
+      - name: Install and verify Windows package
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $package = Get-ChildItem -LiteralPath 'src-tauri/target/release/bundle/nsis' -Filter '*.exe' | Select-Object -First 1
+          if (-not $package) { throw 'WINDOWS_INSTALLER_MISSING' }
+          $installRoot = Join-Path $env:RUNNER_TEMP 'doda installed test'
+          $process = Start-Process -FilePath $package.FullName -ArgumentList @('/S', ('/D=' + $installRoot)) -WindowStyle Hidden -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw 'WINDOWS_INSTALL_FAILED' }
+          & (Join-Path $installRoot 'runtime/win32-x64/bin/node.exe') scripts/verify-desktop.mjs $installRoot windows-smoke.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Path release -Force | Out-Null
+          Copy-Item -LiteralPath $package.FullName -Destination 'release/doda-0.1.0-windows-x64-setup.exe'
+      - name: Verify and archive Mac application
+        if: runner.os == 'macOS'
+        run: |
+          app='src-tauri/target/release/bundle/macos/doda.app'
+          arch=$(node -p process.arch)
+          "$app/Contents/Resources/runtime/darwin-$arch/bin/node" scripts/verify-desktop.mjs "$app" '${{ matrix.name }}-smoke.json'
+          mkdir -p release
+          tar -czf 'release/doda-${{ matrix.name }}.tar.gz' -C src-tauri/target/release/bundle/macos doda.app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: |
+            release/*
+            *-smoke.json
+          if-no-files-found: error
+  universal:
+    name: Assemble and verify Mac universal package
+    needs: build
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: macos-arm64, path: arm64 }
+      - uses: actions/download-artifact@v4
+        with: { name: macos-x64, path: x64 }
+      - run: |
+          mkdir -p universal/arm64 universal/x64 release
+          tar -xzf arm64/release/doda-macos-arm64.tar.gz -C universal/arm64
+          tar -xzf x64/release/doda-macos-x64.tar.gz -C universal/x64
+          cp -R universal/arm64/doda.app universal/doda.app
+          cp -R universal/x64/doda.app/Contents/Resources/runtime/darwin-x64 universal/doda.app/Contents/Resources/runtime/
+          lipo -create universal/arm64/doda.app/Contents/MacOS/doda-desktop universal/x64/doda.app/Contents/MacOS/doda-desktop -output universal/doda.app/Contents/MacOS/doda-desktop
+          lipo -create universal/arm64/doda.app/Contents/Resources/helpers/doda-keychain universal/x64/doda.app/Contents/Resources/helpers/doda-keychain -output universal/doda.app/Contents/Resources/helpers/doda-keychain
+          lipo -verify_arch arm64 x86_64 universal/doda.app/Contents/MacOS/doda-desktop
+          lipo -verify_arch arm64 x86_64 universal/doda.app/Contents/Resources/helpers/doda-keychain
+          codesign --force --deep --sign - universal/doda.app
+          codesign --verify --deep --strict universal/doda.app
+          universal/doda.app/Contents/Resources/runtime/darwin-arm64/bin/node scripts/verify-desktop.mjs universal/doda.app macos-universal-arm64-smoke.json
+          ln -s /Applications universal/Applications
+          mkdir -p image
+          cp -R universal/doda.app image/
+          ln -s /Applications image/Applications
+          hdiutil create -volname doda -srcfolder image -ov -format UDZO release/doda-0.1.0-macos-universal.dmg
+          hdiutil verify release/doda-0.1.0-macos-universal.dmg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-universal
+          path: |
+            release/doda-0.1.0-macos-universal.dmg
+            macos-universal-arm64-smoke.json
+          if-no-files-found: error
+  universal-intel:
+    name: Verify universal package on Intel Mac
+    needs: universal
+    runs-on: macos-15-intel
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: macos-universal, path: universal }
+      - run: |
+          mkdir -p mounted
+          hdiutil attach universal/release/doda-0.1.0-macos-universal.dmg -readonly -nobrowse -mountpoint "$PWD/mounted"
+          mounted/doda.app/Contents/Resources/runtime/darwin-x64/bin/node scripts/verify-desktop.mjs mounted/doda.app macos-universal-x64-smoke.json
+          hdiutil detach "$PWD/mounted"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-universal-intel-check
+          path: macos-universal-x64-smoke.json
+  publish:
+    name: Publish two download packages
+    needs: [build, universal, universal-intel]
+    runs-on: ubuntu-latest
+    permissions: { contents: write }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: windows-x64, path: windows }
+      - uses: actions/download-artifact@v4
+        with: { name: macos-universal, path: macos }
+      - name: Publish
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          if [[ "$tag" != v* ]]; then tag="v$(node -p "require('./package.json').version")"; fi
+          gh release create "$tag" windows/release/doda-0.1.0-windows-x64-setup.exe macos/release/doda-0.1.0-macos-universal.dmg --target "$GITHUB_SHA" --title "doda 0.1.0" --notes-file RELEASE_NOTES.md
