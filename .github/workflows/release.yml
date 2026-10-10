@@ -119,7 +119,7 @@ jobs:
           print('Archive checksum verified; extracting in one pass', flush=True)
           with tarfile.open(archive, mode='r|bz2') as package:
               for member in package:
-                  assert member.name.startswith(model + '/'), 'ASR_ARCHIVE_PREFIX_INVALID'
+                  assert (member.name == model and member.isdir()) or member.name.startswith(model + '/'), 'ASR_ARCHIVE_PREFIX_INVALID'
                   assert member.isdir() or member.isfile(), 'ASR_ARCHIVE_TYPE_INVALID'
                   assert (root / member.name).resolve().is_relative_to(root), 'ASR_ARCHIVE_PATH_INVALID'
                   print(f'Extracting {member.name}', flush=True)
