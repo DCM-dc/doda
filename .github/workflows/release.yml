@@ -221,7 +221,8 @@ jobs:
         with: { name: macos-arm64, path: arm64 }
       - uses: actions/download-artifact@v4
         with: { name: macos-x64, path: x64 }
-      - run: |
+      - name: Merge Mac architecture binaries
+        run: |
           mkdir -p universal/x64 release image
           tar -xzf arm64/release/doda-macos-arm64.tar.gz -C image
           tar -xzf x64/release/doda-macos-x64.tar.gz -C universal/x64
@@ -233,12 +234,24 @@ jobs:
           lipo image/doda.app/Contents/MacOS/doda-desktop -verify_arch arm64 x86_64
           lipo image/doda.app/Contents/Resources/helpers/doda-keychain -verify_arch arm64 x86_64
           image/doda.app/Contents/Resources/runtime/darwin-arm64/bin/node -e 'const fs=require("fs"),root="image/doda.app/Contents/Resources/",a=JSON.parse(fs.readFileSync(root+"release.json"));a.arch="universal";a.runtimes=["arm64","x64"];fs.writeFileSync(root+"release.json",JSON.stringify(a,null,2))'
+      - name: Sign and verify universal Mac application
+        run: |
           codesign --force --deep --sign - image/doda.app
           codesign --verify --deep --strict image/doda.app
           image/doda.app/Contents/Resources/runtime/darwin-arm64/bin/node scripts/verify-desktop.mjs image/doda.app macos-universal-arm64-smoke.json
+      - name: Create and verify universal Mac disk image
+        run: |
           ln -s /Applications image/Applications
           hdiutil create -volname doda -srcfolder image -ov -format UDZO release/doda-0.1.0-macos-universal.dmg
-          hdiutil verify release/doda-0.1.0-macos-universal.dmg
+          for attempt in 1 2 3 4 5; do
+            if result=$(hdiutil verify release/doda-0.1.0-macos-universal.dmg 2>&1); then
+              printf '%s\n' "$result"
+              break
+            fi
+            printf '%s\n' "$result"
+            [[ "$result" == *'Resource temporarily unavailable'* && "$attempt" != 5 ]] || exit 1
+            sleep $((attempt * 2))
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: macos-universal
