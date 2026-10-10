@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       reuse_mac_run:
-        description: 'Optional prior run containing verified Mac archives with identical application sources'
+        description: 'Optional prior run containing verified desktop packages with identical application sources'
         required: false
         type: string
   push:
@@ -29,6 +29,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
+      - name: Verify the reused Windows installer source is identical
+        id: previous_windows_package
+        if: runner.os == 'Windows' && inputs.reuse_mac_run
+        shell: bash
+        env:
+          GH_TOKEN: '${{ github.token }}'
+          REUSE_MAC_RUN: '${{ inputs.reuse_mac_run }}'
+        run: |
+          [[ "$REUSE_MAC_RUN" =~ ^[0-9]+$ ]]
+          old=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$REUSE_MAC_RUN" --jq .head_sha)
+          result=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$REUSE_MAC_RUN/jobs" --jq '.jobs[] | select(.name == "Build windows-x64") | .conclusion')
+          if [[ "$result" == success ]] && git diff --quiet "$old" "$GITHUB_SHA" -- . ':(exclude).github/workflows/release.yml'; then
+            echo 'verified=true' >> "$GITHUB_OUTPUT"
+            echo "Reusing the installed and verified Windows package from $REUSE_MAC_RUN; all application sources and tests are byte-identical."
+          fi
+      - uses: actions/download-artifact@v4
+        if: runner.os == 'Windows' && steps.previous_windows_package.outputs.verified == 'true'
+        with:
+          name: windows-x64
+          path: .release/reused-windows
+          run-id: ${{ inputs.reuse_mac_run }}
+          github-token: ${{ github.token }}
       - name: Verify the reused Mac application source is identical
         if: runner.os == 'macOS' && inputs.reuse_mac_run
         env:
@@ -57,24 +79,24 @@ jobs:
           .release/reused/doda.app/Contents/Resources/runtime/darwin-$arch/bin/node scripts/verify-desktop.mjs .release/reused/doda.app '${{ matrix.name }}-smoke.json'
           mv 'reuse/release/doda-${{ matrix.name }}.tar.gz' release/
       - uses: actions/setup-node@v4
-        if: runner.os == 'Windows' || !inputs.reuse_mac_run
+        if: (runner.os == 'Windows' && steps.previous_windows_package.outputs.verified != 'true') || !inputs.reuse_mac_run
         with:
           node-version: '24.16.0'
           cache: npm
       - uses: Swatinem/rust-cache@v2
-        if: runner.os == 'Windows' || !inputs.reuse_mac_run
+        if: (runner.os == 'Windows' && steps.previous_windows_package.outputs.verified != 'true') || !inputs.reuse_mac_run
         with:
           workspaces: src-tauri
           cache-on-failure: true
       - run: npm ci --no-audit --no-fund
-        if: runner.os == 'Windows' || !inputs.reuse_mac_run
+        if: (runner.os == 'Windows' && steps.previous_windows_package.outputs.verified != 'true') || !inputs.reuse_mac_run
       - run: npm run build
-        if: runner.os == 'Windows' || !inputs.reuse_mac_run
+        if: (runner.os == 'Windows' && steps.previous_windows_package.outputs.verified != 'true') || !inputs.reuse_mac_run
       - run: npx playwright install --only-shell chromium
-        if: runner.os == 'Windows' || !inputs.reuse_mac_run
+        if: (runner.os == 'Windows' && steps.previous_windows_package.outputs.verified != 'true') || !inputs.reuse_mac_run
       - name: Verify prior Windows unit results against identical sources and tests
         id: previous_windows_units
-        if: runner.os == 'Windows' && inputs.reuse_mac_run
+        if: runner.os == 'Windows' && inputs.reuse_mac_run && steps.previous_windows_package.outputs.verified != 'true'
         shell: bash
         env:
           GH_TOKEN: '${{ github.token }}'
@@ -88,7 +110,7 @@ jobs:
             echo "Reusing five successful shuffled unit runs from $REUSE_MAC_RUN; all application sources and tests are byte-identical."
           fi
       - name: Windows unit checks in five shuffled runs
-        if: runner.os == 'Windows' && steps.previous_windows_units.outputs.verified != 'true'
+        if: runner.os == 'Windows' && steps.previous_windows_package.outputs.verified != 'true' && steps.previous_windows_units.outputs.verified != 'true'
         shell: pwsh
         run: |
           foreach ($seed in @(8641,8642,8643,8644,8645)) {
@@ -96,13 +118,13 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
       - name: Native DSH protocol integration
-        if: runner.os == 'Windows' || !inputs.reuse_mac_run
+        if: (runner.os == 'Windows' && steps.previous_windows_package.outputs.verified != 'true') || !inputs.reuse_mac_run
         run: npm run test:runtime
       - uses: actions/setup-python@v5
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && steps.previous_windows_package.outputs.verified != 'true'
         with: { python-version: '3.13' }
       - name: Prepare verified Windows speech model with streamed extraction
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && steps.previous_windows_package.outputs.verified != 'true'
         timeout-minutes: 10
         shell: pwsh
         run: |
@@ -145,21 +167,26 @@ jobs:
           '@ | python -u -
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - run: npm run release:prepare
-        if: runner.os == 'Windows' || !inputs.reuse_mac_run
+        if: (runner.os == 'Windows' && steps.previous_windows_package.outputs.verified != 'true') || !inputs.reuse_mac_run
       - name: Use fast Windows installer compression without quadratic file deduplication
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && steps.previous_windows_package.outputs.verified != 'true'
         run: node -e "const fs=require('fs'),p='.release/tauri.release.json',c=JSON.parse(fs.readFileSync(p));c.bundle.windows.nsis.compression='zlib';c.bundle.windows.nsis.installerHooks='../.release/windows-compiler.nsh';fs.writeFileSync('.release/windows-compiler.nsh','SetDatablockOptimize off'+String.fromCharCode(10));fs.writeFileSync(p,JSON.stringify(c,null,2))"
       - name: Rust platform contracts
-        if: runner.os == 'Windows' || !inputs.reuse_mac_run
+        if: (runner.os == 'Windows' && steps.previous_windows_package.outputs.verified != 'true') || !inputs.reuse_mac_run
         working-directory: src-tauri
         run: cargo test --locked
       - run: npm run release:build
-        if: runner.os == 'Windows' || !inputs.reuse_mac_run
+        if: (runner.os == 'Windows' && steps.previous_windows_package.outputs.verified != 'true') || !inputs.reuse_mac_run
       - name: Install and verify Windows package
         if: runner.os == 'Windows'
         shell: pwsh
+        env: { REUSE_WINDOWS_PACKAGE: '${{ steps.previous_windows_package.outputs.verified }}' }
         run: |
-          $package = Get-ChildItem -LiteralPath 'src-tauri/target/release/bundle/nsis' -Filter '*.exe' | Select-Object -First 1
+          if ($env:REUSE_WINDOWS_PACKAGE -eq 'true') {
+            $package = Get-Item -LiteralPath '.release/reused-windows/release/doda-0.1.0-windows-x64-setup.exe'
+          } else {
+            $package = Get-ChildItem -LiteralPath 'src-tauri/target/release/bundle/nsis' -Filter '*.exe' | Select-Object -First 1
+          }
           if (-not $package) { throw 'WINDOWS_INSTALLER_MISSING' }
           $installRoot = Join-Path $env:RUNNER_TEMP 'doda installed test'
           $process = Start-Process -FilePath $package.FullName -ArgumentList @('/S', ('/D=' + $installRoot)) -WindowStyle Hidden -Wait -PassThru
@@ -203,8 +230,8 @@ jobs:
           mv universal/doda-desktop image/doda.app/Contents/MacOS/doda-desktop
           lipo -create image/doda.app/Contents/Resources/helpers/doda-keychain universal/x64/doda.app/Contents/Resources/helpers/doda-keychain -output universal/doda-keychain
           mv universal/doda-keychain image/doda.app/Contents/Resources/helpers/doda-keychain
-          lipo -verify_arch arm64 x86_64 image/doda.app/Contents/MacOS/doda-desktop
-          lipo -verify_arch arm64 x86_64 image/doda.app/Contents/Resources/helpers/doda-keychain
+          lipo image/doda.app/Contents/MacOS/doda-desktop -verify_arch arm64 x86_64
+          lipo image/doda.app/Contents/Resources/helpers/doda-keychain -verify_arch arm64 x86_64
           image/doda.app/Contents/Resources/runtime/darwin-arm64/bin/node -e 'const fs=require("fs"),root="image/doda.app/Contents/Resources/",a=JSON.parse(fs.readFileSync(root+"release.json"));a.arch="universal";a.runtimes=["arm64","x64"];fs.writeFileSync(root+"release.json",JSON.stringify(a,null,2))'
           codesign --force --deep --sign - image/doda.app
           codesign --verify --deep --strict image/doda.app
