@@ -293,4 +293,7 @@ jobs:
         run: |
           tag="${GITHUB_REF_NAME}"
           if [[ "$tag" != v* ]]; then tag="v$(node -p "require('./package.json').version")"; fi
-          gh release create "$tag" windows/release/doda-0.1.0-windows-x64-setup.exe macos/release/doda-0.1.0-macos-universal.dmg --target "$GITHUB_SHA" --title "doda 0.1.0" --notes-file RELEASE_NOTES.md
+          mkdir -p release
+          zip -j -9 release/doda-0.1.0-macos-universal.zip macos/release/doda-0.1.0-macos-universal.dmg
+          node -e "const fs=require('fs');for(const p of ['windows/release/doda-0.1.0-windows-x64-setup.exe','release/doda-0.1.0-macos-universal.zip']){const size=fs.statSync(p).size;if(size>=2147483648||size<50000000)throw Error('RELEASE_SIZE_INVALID_'+p);console.log(JSON.stringify({file:p,bytes:size}))}"
+          gh release create "$tag" windows/release/doda-0.1.0-windows-x64-setup.exe release/doda-0.1.0-macos-universal.zip --target "$GITHUB_SHA" --title "doda 0.1.0" --notes-file RELEASE_NOTES.md

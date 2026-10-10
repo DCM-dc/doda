@@ -1,6 +1,6 @@
 # doda · 聊着把想法做出来
 
-[下载 Windows 安装包或 Mac 通用包](https://github.com/DCM-dc/doda/releases/latest)。发布包内置运行环境、预览截图引擎和本机语音识别模型，首次使用在设置中填写自己的 DeepSeek、MiMo key。Windows 安装后从开始菜单打开；Mac 将 doda 拖入 Applications。详细安装说明与验证范围见 [RELEASE_NOTES.md](./RELEASE_NOTES.md)。
+[下载 Windows 安装包或 Mac 通用包](https://github.com/DCM-dc/doda/releases/latest)。发布包内置运行环境、预览截图引擎和本机语音识别模型，首次使用在设置中填写自己的 DeepSeek、MiMo key。Windows 安装后从开始菜单打开；Mac 解压 ZIP，打开里面的 DMG，将 doda 拖入 Applications。详细安装说明与验证范围见 [RELEASE_NOTES.md](./RELEASE_NOTES.md)。
 
 doda 的主线是持续聊天。先聊具体功能和规则，再聊视觉感觉；不展示设计风格选择器。需求摘要直接留在对话里，确认后由独立 DSH 进程生成微信原生小程序，用户全程与 doda 协作。制作期间仍能继续聊，下一轮想法不会改动正在执行的需求快照。交付后，主对话能依据最近成功版本的实际内容接着聊作品。
 

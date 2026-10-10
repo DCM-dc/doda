@@ -1,0 +1,56 @@
+name: Publish verified desktop packages
+on:
+  workflow_dispatch:
+    inputs:
+      verified_run:
+        description: 'Run containing the verified Windows installer and Mac universal disk image'
+        required: true
+        type: string
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Verify source identity and successful package checks
+        env:
+          GH_TOKEN: '${{ github.token }}'
+          VERIFIED_RUN: '${{ inputs.verified_run }}'
+        run: |
+          [[ "$VERIFIED_RUN" =~ ^[0-9]+$ ]]
+          old=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$VERIFIED_RUN" --jq .head_sha)
+          git diff --exit-code "$old" "$GITHUB_SHA" -- server src scripts src-tauri package.json package-lock.json LICENSE LICENSE.details THIRD_PARTY_NOTICES.md THIRD-PARTY-NOTICES.md licenses index.html vite.config.ts
+          for job in 'Build windows-x64' 'Build macos-arm64' 'Build macos-x64' 'Assemble and verify Mac universal package' 'Verify universal package on Intel Mac'; do
+            result=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$VERIFIED_RUN/jobs" --jq ".jobs[] | select(.name == \"$job\") | .conclusion")
+            [[ "$result" == success ]]
+          done
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-x64
+          path: windows
+          run-id: ${{ inputs.verified_run }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: macos-universal
+          path: macos
+          run-id: ${{ inputs.verified_run }}
+          github-token: ${{ github.token }}
+      - name: Compress the verified Mac disk image for GitHub
+        run: |
+          mkdir -p release
+          zip -j -9 release/doda-0.1.0-macos-universal.zip macos/release/doda-0.1.0-macos-universal.dmg
+          node -e "const fs=require('fs');for(const p of ['windows/release/doda-0.1.0-windows-x64-setup.exe','release/doda-0.1.0-macos-universal.zip']){const size=fs.statSync(p).size;if(size>=2147483648||size<50000000)throw Error('RELEASE_SIZE_INVALID_'+p);console.log(JSON.stringify({file:p,bytes:size}))}"
+          unzip -t release/doda-0.1.0-macos-universal.zip
+      - name: Publish two download packages
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          tag="v$(node -p "require('./package.json').version")"
+          gh release create "$tag" windows/release/doda-0.1.0-windows-x64-setup.exe release/doda-0.1.0-macos-universal.zip --target "$GITHUB_SHA" --title "doda 0.1.0" --notes-file RELEASE_NOTES.md
