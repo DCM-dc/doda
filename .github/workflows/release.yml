@@ -83,6 +83,52 @@ jobs:
       - name: Native DSH protocol integration
         if: runner.os == 'Windows' || !inputs.reuse_mac_run
         run: npm run test:runtime
+      - uses: actions/setup-python@v5
+        if: runner.os == 'Windows'
+        with: { python-version: '3.13' }
+      - name: Prepare verified Windows speech model with streamed extraction
+        if: runner.os == 'Windows'
+        timeout-minutes: 10
+        shell: pwsh
+        run: |
+          @'
+          import hashlib, pathlib, tarfile, time, urllib.request
+          workspace = pathlib.Path.cwd().resolve()
+          root = (workspace / '.release/resources/asr').resolve()
+          downloads = (workspace / '.release/downloads').resolve()
+          assert root.is_relative_to(workspace) and downloads.is_relative_to(workspace)
+          root.mkdir(parents=True, exist_ok=True)
+          downloads.mkdir(parents=True, exist_ok=True)
+          model = 'sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17'
+          archive = downloads / 'asr.tar.bz2'
+          source = f'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/{model}.tar.bz2'
+          digest, size, marker, started = hashlib.sha256(), 0, 0, time.monotonic()
+          print('Downloading the public speech model archive', flush=True)
+          request = urllib.request.Request(source, headers={'User-Agent': 'doda-release'})
+          with urllib.request.urlopen(request, timeout=60) as response, archive.open('wb') as output:
+              while chunk := response.read(1024 * 1024):
+                  if time.monotonic() - started > 240:
+                      raise TimeoutError('ASR_DOWNLOAD_TIMEOUT')
+                  output.write(chunk)
+                  digest.update(chunk)
+                  size += len(chunk)
+                  if size // (32 * 1024 * 1024) > marker:
+                      marker = size // (32 * 1024 * 1024)
+                      print(f'Downloaded {size // (1024 * 1024)} MiB', flush=True)
+          assert digest.hexdigest() == '7d1efa2138a65b0b488df37f8b89e3d91a60676e416f515b952358d83dfd347e', 'ASR_CHECKSUM_MISMATCH'
+          print('Archive checksum verified; extracting in one pass', flush=True)
+          with tarfile.open(archive, mode='r|bz2') as package:
+              for member in package:
+                  assert member.name.startswith(model + '/'), 'ASR_ARCHIVE_PREFIX_INVALID'
+                  assert member.isdir() or member.isfile(), 'ASR_ARCHIVE_TYPE_INVALID'
+                  assert (root / member.name).resolve().is_relative_to(root), 'ASR_ARCHIVE_PATH_INVALID'
+                  print(f'Extracting {member.name}', flush=True)
+                  package.extract(member, path=root, filter='data')
+          assert (root / model / 'model.int8.onnx').is_file() and (root / model / 'tokens.txt').is_file()
+          archive.unlink()
+          print('Verified Windows speech model ready', flush=True)
+          '@ | python -u -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - run: npm run release:prepare
         if: runner.os == 'Windows' || !inputs.reuse_mac_run
       - name: Rust platform contracts
