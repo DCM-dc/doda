@@ -148,6 +148,7 @@ export class Builder {
     } finally {
       clearTimeout(timeout)
       try { await control.harness?.close() } catch (error) { event('cleanup', '执行进程退出异常，请检查本轮记录。') }
+      control.harness = undefined
       run.finishedAt = new Date().toISOString(); project.updatedAt = run.finishedAt
       try { await this.store.save() } finally { this.active.delete(project.id) }
     }

@@ -69,6 +69,18 @@ async function startupFixture(start: () => Promise<void>, runFailure?: Error, cl
 async function terminalStartup(run: Awaited<ReturnType<Builder['start']>>, builder: Builder) { await vi.waitFor(() => expect(run.finishedAt).toBeTypeOf('string'), { timeout: 10000, interval: 20 }); await builder.close() }
 
 describe('Implementation runtime startup recovery', () => {
+  it('closing during final persistence waits without closing the finished harness twice', async () => {
+    let begin!: () => void, persist!: () => void, saved!: () => void
+    const started = new Promise<void>(done => { begin = done }), finalSave = new Promise<void>(done => { persist = done }), saving = new Promise<void>(done => { saved = done })
+    const test = await startupFixture(async () => { await started }), originalSave = test.store.save.bind(test.store)
+    vi.spyOn(test.store, 'save').mockImplementation(async () => { if (test.project.runs[0]?.finishedAt) { saved(); await finalSave } await originalSave() })
+    const run = await test.builder.start(test.project)
+    begin(); await saving
+    const closing = test.builder.close()
+    try { expect(test.closing).toHaveBeenCalledTimes(1); expect(run.status).toBe('completed') }
+    finally { persist(); await closing }
+    expect(JSON.parse(await readFile(join(test.root, 'state.json'), 'utf8')).projects[0].runs[0].status).toBe('completed')
+  })
   it('retries one failed handshake only after the SDK has settled cleanup, then starts one agent turn', async () => {
     let attempts = 0, release!: () => void, started!: () => void
     const firstStart = new Promise<void>(done => { started = done }), cleanup = new Promise<void>(done => { release = done }), test = await startupFixture(async () => { started(); if (++attempts === 1) { await cleanup; throw initializedTimeout() } })
